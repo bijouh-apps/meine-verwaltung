@@ -55,13 +55,16 @@ var SCRIPT = "https://script.google.com/macros/s/AKfycbzFP0WKdQh874ib1kiOstiRH4I
 var STORE = "jt-phone-key";
 var data = null;
 
-function getKey() { try { return localStorage.getItem(STORE) || ""; } catch (e) { return ""; } }
-function setKey(k) { try { if (k) localStorage.setItem(STORE, k); else localStorage.removeItem(STORE); } catch (e) {} }
-// The QR code in the app carries the key after "#k=" – the part after "#" never leaves this phone.
-(function takeKeyFromLink() {
-  var m = location.hash.match(/[#&]k=([0-9a-f]{64})/);
-  if (m) { setKey(m[1]); history.replaceState(null, "", location.pathname); }
-})();
+// The QR code in the app carries the key after "#k=" – the part after "#" is never sent to any server.
+// It stays in the address on purpose: on the iPhone a home-screen icon doesn't share Safari's storage,
+// so the icon has to remember the key in its address.
+function linkKey() { var m = location.hash.match(/[#&]k=([0-9a-f]{64})/); return m ? m[1] : ""; }
+function getKey() { try { return linkKey() || localStorage.getItem(STORE) || ""; } catch (e) { return linkKey(); } }
+function setKey(k) {
+  try { if (k) localStorage.setItem(STORE, k); else localStorage.removeItem(STORE); } catch (e) {}
+  history.replaceState(null, "", location.pathname + (k ? "#k=" + k : ""));
+}
+(function keepKeyInLink() { var k = getKey(); if (k) setKey(k); })();
 
 function el(tag, attrs, kids) {
   var e = document.createElement(tag);
