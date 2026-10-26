@@ -1,0 +1,216 @@
+<!doctype html>
+<!--
+  Handy-Seite "Meine Verwaltung" – only for Bijou. Published on GitHub Pages; the page holds NO data.
+  It asks her Google script (Tester-Verwaltung) with the PHONE KEY, which can do only four things:
+  answer the agents' questions, send/discard drafts, approve new testers, mark tester mails as done.
+  The key comes once via the QR code in her app (#k=…), stays in this browser only, and a new key
+  (tab Agent → 📱) makes the old one useless at once.
+-->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src https://script.google.com https://script.googleusercontent.com; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="theme-color" content="#3c3489">
+<title>Meine Verwaltung</title>
+<style>
+:root{--bg:#f5f4fb;--card:#fff;--ink:#1f1a24;--muted:#6b6375;--line:#e3dcea;--brand:#3c3489;--ok:#2e7d4f;--warn:#9a5b00}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15131c;--card:#211d2b;--ink:#f1ecf5;--muted:#a99fb4;--line:#3a3448;--brand:#a9a2f0;--ok:#3f9a66;--warn:#e0a040}}
+:root[data-theme="dark"]{--bg:#15131c;--card:#211d2b;--ink:#f1ecf5;--muted:#a99fb4;--line:#3a3448;--brand:#a9a2f0;--ok:#3f9a66;--warn:#e0a040}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px}
+h2{font-size:18px;margin:24px 0 4px}
+.muted{color:var(--muted);font-size:14px}
+button,a.btn{font:inherit;font-size:15px;border-radius:10px;padding:10px 14px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;text-decoration:none;display:inline-block}
+button:disabled{opacity:.6}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0;overflow-wrap:anywhere}
+.head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.pill{font-size:12px;border-radius:999px;padding:2px 8px;background:var(--bg);border:1px solid var(--line)}
+label{display:block;font-size:13px;color:var(--muted);margin-top:10px}
+textarea,input{width:100%;box-sizing:border-box;font:inherit;font-size:15px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);color:var(--ink)}
+pre{white-space:pre-wrap;font:inherit;font-size:14px;margin:6px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+.msg{font-size:14px;color:var(--muted);margin:6px 0 0}
+.hint{font-size:13px;color:var(--warn)}
+.framebox{overflow:hidden;border:1px solid var(--line);border-radius:10px;margin-top:6px;height:520px}
+/* The mail is shown a bit smaller (like a mail app does), so it fits the phone width without cutting words. */
+.mailframe{width:125%;height:650px;border:0;background:#eef2f5;transform:scale(.8);transform-origin:0 0}
+details{margin-top:10px}summary{cursor:pointer;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<main>
+  <h1>📱 Meine Verwaltung</h1>
+  <p class="muted">Das Eilige für unterwegs. Alles andere machst du am Computer in deiner App. Gesendet wird nur, wenn du tippst.</p>
+  <div id="all"><p class="muted">Lädt …</p></div>
+</main>
+<script>
+"use strict";
+// Bijou's Google script (Tester-Verwaltung), the same address her app uses.
+var SCRIPT = "https://script.google.com/macros/s/AKfycbzFP0WKdQh874ib1kiOstiRH4IcLw8UsSsxEMXndD1l40GIbu1Q2V3rEiMu3FntJ0ss/exec";
+var STORE = "jt-phone-key";
+var data = null;
+
+function getKey() { try { return localStorage.getItem(STORE) || ""; } catch (e) { return ""; } }
+function setKey(k) { try { if (k) localStorage.setItem(STORE, k); else localStorage.removeItem(STORE); } catch (e) {} }
+// The QR code in the app carries the key after "#k=" – the part after "#" never leaves this phone.
+(function takeKeyFromLink() {
+  var m = location.hash.match(/[#&]k=([0-9a-f]{64})/);
+  if (m) { setKey(m[1]); history.replaceState(null, "", location.pathname); }
+})();
+
+function el(tag, attrs, kids) {
+  var e = document.createElement(tag);
+  Object.keys(attrs || {}).forEach(function (k) { if (k === "text") e.textContent = attrs[k]; else if (k === "on") e.onclick = attrs[k]; else e.setAttribute(k, attrs[k]); });
+  (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
+  return e;
+}
+var ERRORS = { forbidden: "Der Handy-Schlüssel gilt nicht mehr.", done: "Das wurde schon erledigt.", unknown: "Den Eintrag gibt es nicht mehr.", unknown_tester: "Die Person gibt es nicht mehr in der Tabelle." };
+function errorText(code) { return ERRORS[code] || ("Fehler: " + code); }
+
+function load() {
+  var key = getKey();
+  if (!key) return askKey("");
+  fetch(SCRIPT + "?action=phoneData&key=" + encodeURIComponent(key), { credentials: "omit" })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) return askKey(r.error === "forbidden" ? "Dieser Handy-Schlüssel gilt nicht (mehr). Mach in deiner App einen neuen und scanne den QR-Code." : errorText(r.error));
+      data = r; render();
+    })
+    .catch(function () { document.getElementById("all").replaceChildren(el("p", { class: "hint", text: "Keine Verbindung – Internet prüfen." }), el("button", { text: "↻ Nochmal", on: load })); });
+}
+function post(payload, msg, buttons) {
+  buttons.forEach(function (b) { b.disabled = true; });
+  msg.textContent = "Moment …";
+  payload.key = getKey();
+  fetch(SCRIPT, { method: "POST", credentials: "omit", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(payload) })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) { msg.textContent = errorText(r.error); buttons.forEach(function (b) { b.disabled = false; }); return; }
+      load();
+    })
+    .catch(function () { msg.textContent = "Keine Verbindung – nichts wurde geändert. Bitte nochmal tippen."; buttons.forEach(function (b) { b.disabled = false; }); });
+}
+
+function askKey(why) {
+  var input = el("input", { type: "password", autocomplete: "off", "aria-label": "Handy-Schlüssel" });
+  var save = el("button", { class: "ok", text: "Speichern" });
+  save.onclick = function () { var k = input.value.trim().toLowerCase(); if (/^[0-9a-f]{64}$/.test(k)) { setKey(k); load(); } else hint.textContent = "Der Schlüssel hat 64 Zeichen (0–9, a–f)."; };
+  var hint = el("p", { class: "hint", text: why });
+  document.getElementById("all").replaceChildren(el("div", { class: "card" }, [
+    el("strong", { text: "Handy-Schlüssel" }),
+    el("p", { class: "muted", text: "Am einfachsten: In deiner App Reiter Agent → 📱 Handy-Seite → QR-Code mit dem Handy scannen. Oder den Schlüssel hier einfügen:" }),
+    input, el("div", { class: "row" }, [save]), hint,
+  ]));
+}
+
+function section(title, n, empty) {
+  var s = el("section", {}, [el("h2", { text: title + " (" + n + ")" })]);
+  if (!n) s.appendChild(el("p", { class: "muted", text: empty }));
+  return s;
+}
+function dateDe(s) { var d = new Date(s); return isNaN(d.getTime()) ? (s || "") : d.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }); }
+function address(from) { var m = String(from).match(/<([^>]+)>/); return (m ? m[1] : String(from)).trim().toLowerCase(); }
+var ART = { willkommen: "Willkommens-Mail", antwort: "Antwort", erinnerung: "Erinnerung", hinweis: "Hinweis" };
+
+function render() {
+  var all = document.getElementById("all");
+  all.replaceChildren();
+
+  var q = section("❓ Fragen der Agenten", data.questions.length, "Keine offenen Fragen.");
+  data.questions.forEach(function (s) {
+    var msg = el("p", { class: "msg" }), yes = el("button", { class: "ok", text: "✓ Ja" }), no = el("button", { text: "✕ Nein" });
+    yes.onclick = function () { post({ action: "phoneAnswer", id: s.id, status: "freigegeben" }, msg, [yes, no]); };
+    no.onclick = function () { post({ action: "phoneAnswer", id: s.id, status: "verworfen" }, msg, [yes, no]); };
+    q.appendChild(el("div", { class: "card" }, [el("strong", { text: s.subject }), el("pre", { text: s.text }), el("div", { class: "row" }, [yes, no]), msg]));
+  });
+  all.appendChild(q);
+
+  var d = section("✍ Vorschläge zum Senden", data.drafts.length, "Keine Entwürfe.");
+  data.drafts.forEach(function (s) {
+    var subject = el("input", { "aria-label": "Betreff" }), body = el("textarea", { rows: 8, "aria-label": "Text" }), msg = el("p", { class: "msg" });
+    subject.value = s.subject || ""; body.value = s.text || "";
+    var sendBtn = el("button", { class: "ok", text: s.thread ? "📤 Antwort senden" : "📤 Senden" }), drop = el("button", { text: "✕ Verwerfen" });
+    sendBtn.onclick = function () {
+      if (!body.value.trim()) { msg.textContent = "Der Text ist leer."; return; }
+      post({ action: "phoneSend", id: s.id, subject: subject.value, body: body.value }, msg, [sendBtn, drop]);
+    };
+    drop.onclick = function () { post({ action: "phoneDismiss", id: s.id }, msg, [sendBtn, drop]); };
+    var head = [
+      el("div", { class: "head" }, [el("strong", { text: s.name || s.email }), el("span", { class: "pill", text: ART[s.art] || s.art }), el("span", { class: "muted", text: s.email })]),
+      s.hint ? el("p", { class: "muted", text: "💡 " + s.hint }) : null,
+    ];
+    var edit = [s.thread ? null : el("label", { text: "Betreff" }), s.thread ? null : subject, el("label", { text: "Text (du kannst ihn ändern)" }), body];
+    if (s.html) {
+      // The designed mail exactly as it arrives (sandboxed: no scripts, no links leave this page by themselves).
+      var frame = el("iframe", { sandbox: "", title: "Vorschau der Mail", class: "mailframe" });
+      // Like a phone mail app: fit the mail to the screen width.
+      frame.srcdoc = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+        "<style>body{margin:0}img{max-width:100%;height:auto}table{max-width:100%!important}td,div{overflow-wrap:break-word;white-space:normal!important}a{overflow-wrap:anywhere}</style>" + s.html;
+      var warn = el("p", { class: "hint", text: "" });
+      var check = function () { warn.textContent = body.value.trim() !== String(s.text || "").trim() || subject.value.trim() !== String(s.subject || "").trim() ? "Du hast etwas geändert – dann geht die Mail als einfacher Text raus (ohne Design und QR-Codes)." : ""; };
+      body.oninput = check; subject.oninput = check;
+      if (s.canSwap) {
+        var swapBtn = el("button", { text: "⇅ Reihenfolge tauschen" });
+        swapBtn.onclick = function () { post({ action: "phoneSwap", id: s.id }, msg, [swapBtn, sendBtn, drop]); };
+        head.push(el("div", { class: "row" }, [
+          el("span", { class: "muted", text: "Reihenfolge: " + (/^\s*EN\b/.test(s.text || "") ? "Englisch zuerst, dann Deutsch" : "Deutsch zuerst, dann Englisch") }), swapBtn,
+        ]));
+      }
+      head.push(el("p", { class: "muted", text: "Betreff: " + s.subject }), el("p", { class: "muted", text: "So kommt die Mail an:" }), el("div", { class: "framebox" }, [frame]),
+        el("details", {}, [el("summary", { text: "✎ Text ändern" })].concat(edit, [warn])));
+    } else head = head.concat(edit);
+    d.appendChild(el("div", { class: "card" }, head.concat([el("div", { class: "row" }, [sendBtn, drop]), msg])));
+  });
+  all.appendChild(d);
+
+  var t = section("🧑‍🤝‍🧑 Neue Anmeldungen", data.newTesters.length, "Niemand wartet auf die Freigabe.");
+  data.newTesters.forEach(function (r) {
+    var msg = el("p", { class: "msg" }), ok = el("button", { class: "ok", text: data.welcomeReady ? "✓ Freigeben + Willkommens-Mail vorbereiten" : "✓ Freigeben" });
+    ok.onclick = function () { post({ action: "phoneApprove", email: r.email }, msg, [ok]); };
+    t.appendChild(el("div", { class: "card" }, [
+      el("div", { class: "head" }, [el("strong", { text: r.name || r.email }), el("span", { class: "muted", text: r.email + " · " + r.since })]),
+      r.gmail ? el("p", { class: "hint", text: "Gmail " + r.gmail + ": später am Computer bei Google als Testnutzer eintragen (deine App erinnert dich)." }) : null,
+      el("p", { class: data.welcomeReady ? "muted" : "hint", text: data.welcomeReady
+        ? "Danach liegt die Willkommens-Mail (mit Freischaltcode) oben unter „Vorschläge zum Senden“ – lesen und senden."
+        : "Die Willkommens-Mail kann hier erst vorbereitet werden, wenn deine App einmal den Reiter Agent geöffnet hat. Freigeben geht schon, die Mail schickst du dann am Computer." }),
+      el("div", { class: "row" }, [ok]), msg,
+    ]));
+  });
+  all.appendChild(t);
+
+  var i = section("📥 Unbeantwortete Tester-Mails", data.inbox.length, "Alles beantwortet.");
+  if (data.inbox.length) i.appendChild(el("p", { class: "muted", text: "„✓ Erledigt“: Label „Agent/Erledigt“ in Gmail und ab ins Archiv – gelöscht wird nichts." }));
+  data.inbox.forEach(function (m) {
+    var msg = el("p", { class: "msg" }), done = el("button", { text: "✓ Erledigt" });
+    var same = data.inbox.filter(function (x) { return address(x.from) === address(m.from); });
+    var btns = [done];
+    done.onclick = function () { post({ action: "phoneDone", threadIds: [m.threadId] }, msg, btns); };
+    if (same.length > 1) {
+      var allBtn = el("button", { text: "✓ Alle " + same.length + " von " + address(m.from) });
+      allBtn.onclick = function () { post({ action: "phoneDone", threadIds: same.map(function (x) { return x.threadId; }) }, msg, btns); };
+      btns.push(allBtn);
+    }
+    var gmail = el("a", { class: "btn", href: "https://mail.google.com/mail/?authuser=" + encodeURIComponent(data.me) + "#all/" + m.threadId, target: "_blank", rel: "noopener noreferrer", text: "In Gmail öffnen" });
+    i.appendChild(el("div", { class: "card" }, [
+      el("div", { class: "head" }, [el("strong", { text: m.subject || "(ohne Betreff)" }), el("span", { class: "muted", text: m.from + " · " + dateDe(m.date) })]),
+      el("p", { class: "muted", text: String(m.body || "").slice(0, 280) }),
+      el("div", { class: "row" }, [gmail].concat(btns)), msg,
+    ]));
+  });
+  all.appendChild(i);
+
+  if (data.marketingOpen) all.appendChild(el("p", { class: "muted", text: "📣 " + data.marketingOpen + " Marketing-Beiträge warten – die gibst du am Computer im Reiter Marketing-Agent frei." }));
+
+  var forget = el("button", { text: "Schlüssel auf diesem Handy löschen" });
+  forget.onclick = function () { setKey(""); askKey(""); };
+  all.appendChild(el("div", { class: "row" }, [el("button", { text: "↻ Neu laden", on: load }), forget]));
+}
+load();
+</script>
+</body>
+</html>
