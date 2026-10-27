@@ -118,7 +118,7 @@ function section(title, n, empty) {
 }
 function dateDe(s) { var d = new Date(s); return isNaN(d.getTime()) ? (s || "") : d.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }); }
 function address(from) { var m = String(from).match(/<([^>]+)>/); return (m ? m[1] : String(from)).trim().toLowerCase(); }
-var ART = { willkommen: "Willkommens-Mail", antwort: "Antwort", erinnerung: "Erinnerung", hinweis: "Hinweis" };
+var ART = { willkommen: "Willkommens-Mail", start_erinnerung: "Erinnerung: noch nicht gestartet", antwort: "Antwort", erinnerung: "Erinnerung", hinweis: "Hinweis" };
 
 function render() {
   var all = document.getElementById("all");
