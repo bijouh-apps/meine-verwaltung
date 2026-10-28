@@ -72,7 +72,7 @@ function el(tag, attrs, kids) {
   (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
   return e;
 }
-var ERRORS = { forbidden: "Der Handy-Schlüssel gilt nicht mehr.", done: "Das wurde schon erledigt.", unknown: "Den Eintrag gibt es nicht mehr.", unknown_tester: "Die Person gibt es nicht mehr in der Tabelle." };
+var ERRORS = { forbidden: "Der Handy-Schlüssel gilt nicht mehr.", done: "Das wurde schon erledigt.", unknown: "Den Eintrag gibt es nicht mehr.", unknown_tester: "Die Person gibt es nicht mehr in der Tabelle.", no_reason: "Ohne Grund wird nicht freigegeben – erst nachfragen." };
 function errorText(code) { return ERRORS[code] || ("Fehler: " + code); }
 
 function load() {
@@ -170,6 +170,27 @@ function render() {
     d.appendChild(el("div", { class: "card" }, head.concat([el("div", { class: "row" }, [sendBtn, drop]), msg])));
   });
   all.appendChild(d);
+
+  // Requests for another mailbox: allow with one tap – only with a reason (else ask for it). Declining: at the computer.
+  var reqs = data.mailboxRequests || [];
+  if (reqs.length) {
+    var p = section("📮 Postfach-Anfragen", reqs.length, "");
+    reqs.forEach(function (r) {
+      var msg = el("p", { class: "msg" });
+      var btn = !r.known ? null : r.reason
+        ? el("button", { class: "ok", text: "✓ " + r.wanted + ". Postfach freigeben", "aria-label": r.wanted + ". Postfach für " + r.name + " freigeben" })
+        : el("button", { class: "ok", text: "❓ Nach dem Grund fragen", "aria-label": r.name + " nach dem Grund fragen" });
+      if (btn) btn.onclick = function () { post({ action: r.reason ? "phoneMailbox" : "phoneMailboxAsk", threadId: r.threadId }, msg, [btn]); };
+      p.appendChild(el("div", { class: "card" }, [
+        el("div", { class: "head" }, [el("strong", { text: r.name }), el("span", { class: "muted", text: r.email + " · " + dateDe(r.date) })]),
+        el("p", { class: "muted", text: "möchte " + r.wanted + " Postfächer (jetzt " + r.current + ")" }),
+        r.reason ? el("pre", { text: "Grund: " + r.reason }) : el("p", { class: "hint", text: "Noch kein Grund angegeben – erst nachfragen, dann freigeben." }),
+        r.known ? null : el("p", { class: "hint", text: "Diese Adresse steht nicht in der Übersicht – bitte am Computer bei der Person freigeben." }),
+        btn ? el("div", { class: "row" }, [btn]) : null, msg,
+      ]));
+    });
+    all.appendChild(p);
+  }
 
   var t = section("🧑‍🤝‍🧑 Neue Anmeldungen", data.newTesters.length, "Niemand wartet auf die Freigabe.");
   data.newTesters.forEach(function (r) {
