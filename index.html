@@ -2,7 +2,8 @@
 <!--
   Handy-Seite "Meine Verwaltung" – only for Bijou. Published on GitHub Pages; the page holds NO data.
   It asks her Google script (Tester-Verwaltung) with the PHONE KEY, which can do only four things:
-  answer the agents' questions, send/discard drafts, approve new testers, mark tester mails as done.
+  answer the agents' questions, send/discard drafts, approve new testers, mark tester mails as done –
+  plus her own task board "Aufgaben & Termine" (sheet "Aufgaben": add, move, never delete; no tester data).
   The key comes once via the QR code in her app (#k=…), stays in this browser only, and a new key
   (tab Agent → 📱) makes the old one useless at once.
 -->
@@ -40,6 +41,45 @@ pre{white-space:pre-wrap;font:inherit;font-size:14px;margin:6px 0}
 /* The mail is shown a bit smaller (like a mail app does), so it fits the phone width without cutting words. */
 .mailframe{width:125%;height:650px;border:0;background:#eef2f5;transform:scale(.8);transform-origin:0 0}
 details{margin-top:10px}summary{cursor:pointer;color:var(--muted);font-size:14px}
+/* Aufgaben-Tafel (as in docs/entwurf/Aufgaben-Tafel-Handy-Entwurf.html) */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+:focus-visible{outline:3px solid var(--brand);outline-offset:2px}
+select{width:100%;box-sizing:border-box;font:inherit;font-size:15px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);color:var(--ink)}
+.tabs-bar{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0 0}
+.tabs-bar button{padding:8px 10px;font-size:14px;border-radius:999px}
+.tabs-bar button[aria-selected="true"]{background:var(--brand);color:#fff;border-color:var(--brand)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .tabs-bar button[aria-selected="true"]{color:#15131c}}
+.tabs-bar .n{display:inline-block;min-width:18px;margin-left:4px;font-size:12px;font-weight:700;border-radius:999px;padding:0 6px;background:var(--bg);color:var(--ink)}
+.col-head{font-size:16px;margin:14px 0 2px;display:flex;gap:8px;align-items:baseline}
+.col-head .n{font-size:13px;color:var(--muted);font-weight:400}
+.col-list{list-style:none;margin:0;padding:0}
+.card h4{margin:0 0 2px;font-size:16px}
+.card .line{margin:0 0 6px}
+.card .head{font-size:13px;color:var(--muted)}
+.row select{flex:1 1 120px;width:auto}
+.tag-App{border-color:#9fb6d6}.tag-Tester{border-color:#d9b866}.tag-Firma{border-color:#b9a9e0}.tag-Marketing{border-color:#93c4a2}
+.sync{display:flex;gap:8px;align-items:baseline;background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:8px 12px;margin:10px 0}
+.add{width:100%;margin-top:6px}
+.term-list{list-style:none;margin:0;padding:0}
+.term-list li{display:flex;flex-direction:column}
+.term-list time{font-weight:600;font-size:14px}
+.term-list .when{font-size:13px;color:var(--muted)}
+.month-nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.month-nav strong{flex:1;text-align:center;font-size:15px}
+.month-nav button{padding:8px 12px}
+.month{width:100%;border-collapse:collapse;table-layout:fixed;background:var(--card);border-radius:12px;overflow:hidden}
+.month th{font-size:12px;color:var(--muted);padding:4px 0;font-weight:600}
+.month td{border:1px solid var(--line);height:46px;vertical-align:top;padding:2px 3px;font-size:12px}
+.month .num{display:block;font-weight:600;color:var(--muted)}
+.month td.has{background:color-mix(in srgb,var(--brand) 16%,var(--card))}
+.month td.has .num{color:var(--brand)}
+.month td.today{box-shadow:inset 0 0 0 2px var(--brand)}
+.month .ev{display:block;width:6px;height:6px;border-radius:50%;background:var(--brand);font-size:0;margin-top:2px;overflow:hidden}
+.month td.empty{background:var(--bg)}
+.month-list{font-size:14px;margin-top:8px}
+.view-row{display:flex;gap:6px;margin:6px 0}
+.view-row button{padding:6px 12px;font-size:14px;border-radius:999px}
+.view-row button[aria-pressed="true"]{background:var(--brand);color:#fff;border-color:var(--brand)}
 </style>
 </head>
 <body>
@@ -68,11 +108,74 @@ function setKey(k) {
 
 function el(tag, attrs, kids) {
   var e = document.createElement(tag);
-  Object.keys(attrs || {}).forEach(function (k) { if (k === "text") e.textContent = attrs[k]; else if (k === "on") e.onclick = attrs[k]; else e.setAttribute(k, attrs[k]); });
-  (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
+  Object.keys(attrs || {}).forEach(function (k) {
+    var v = attrs[k];
+    if (v === null || v === undefined || v === false) return;
+    if (k === "text") e.textContent = v; else if (k === "on") e.onclick = v; else e.setAttribute(k, v);
+  });
+  (kids || []).forEach(function (c) { if (c) e.append(c); });
   return e;
 }
-var ERRORS = { forbidden: "Der Handy-Schlüssel gilt nicht mehr.", done: "Das wurde schon erledigt.", unknown: "Den Eintrag gibt es nicht mehr.", unknown_tester: "Die Person gibt es nicht mehr in der Tabelle.", no_reason: "Ohne Grund wird nicht freigegeben – erst nachfragen." };
+// >>> secret-check (Bijou's rule 31.10.2026: API keys never leave the computer). Same patterns as src/lib/secrets.ts –
+// src/lib/secretMirrors.test.ts checks that this copy finds exactly the same. Only the KIND is returned, never the key.
+var SECRET_RES_ = [
+  ["Anthropic-Schlüssel (Claude)", /(^|[^A-Za-z0-9_+\/-])sk-ant-[A-Za-z0-9_-]{20,}/g],
+  ["Google-API-Schlüssel", /(^|[^A-Za-z0-9_+\/-])AIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])/g],
+  ["Google-OAuth-Geheimnis (Client-Secret)", /(^|[^A-Za-z0-9_+\/-])GOCSPX-[A-Za-z0-9_-]{20,}/g],
+  ["Google-Zugangs-Token (Refresh-Token)", /(^|[^A-Za-z0-9_+\/-])1\/\/0[0-9A-Za-z_-]{30,}/g],
+  ["Google-Zugangs-Token (Access-Token)", /(^|[^A-Za-z0-9_+\/-])ya29\.[0-9A-Za-z_-]{30,}/g],
+  ["Privater Schlüssel (PEM-Block)", /()-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/g],
+  ["GitHub-Token", /(^|[^A-Za-z0-9_+\/-])(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})/g],
+];
+var SECRET_ASSIGN_ = /\b((?:[A-Za-z]+[_-]?)?(?:api[_-]?key|apikey|secret[_-]?key|client[_-]?secret|access[_-]?token|auth[_-]?token|refresh[_-]?token|private[_-]?key))\b(["']?\s*[:=]\s*["']?)([A-Za-z0-9_+=-]{24,})/gi;
+var SECRET_ASSIGN_LABEL_ = "API-Schlüssel (Zuweisung „…key = …“)";
+
+function secretLooksReal_(v) {
+  if (!/[0-9]/.test(v) || !/[A-Za-z]/.test(v)) return false;
+  if (/x{4,}|your|dein|example|beispiel|placeholder|platzhalter|changeme|dummy|fake|test_?key|0{6,}/i.test(v)) return false;
+  if (/^[A-Z0-9_]+$/.test(v) && v.indexOf("_") >= 0) return false;
+  if (/^[a-z0-9_]+$/.test(v) && (v.match(/_/g) || []).length >= 2) return false;
+  var seen = {}, n = 0;
+  for (var i = 0; i < v.length; i++) if (!seen[v[i]]) { seen[v[i]] = 1; n++; }
+  return n >= 12;
+}
+
+function secretPlain_(text) {
+  return String(text == null ? "" : text).replace(/data:[a-z]+\/[a-z0-9.+-]+;base64,[A-Za-z0-9+\/=]+/gi, " ");
+}
+
+/** The kind of the first secret key in a text ("" = none). */
+function secretFound_(text) {
+  var s = secretPlain_(text), m;
+  for (var i = 0; i < SECRET_RES_.length; i++) {
+    SECRET_RES_[i][1].lastIndex = 0;
+    if (SECRET_RES_[i][1].test(s)) { SECRET_RES_[i][1].lastIndex = 0; return SECRET_RES_[i][0]; }
+  }
+  SECRET_ASSIGN_.lastIndex = 0;
+  while ((m = SECRET_ASSIGN_.exec(s))) if (secretLooksReal_(m[3])) { SECRET_ASSIGN_.lastIndex = 0; return SECRET_ASSIGN_LABEL_; }
+  return "";
+}
+
+/** The first secret in any text field of a request (nested too) – not the access key itself, not QR pictures. */
+function payloadSecret_(v, field) {
+  if (field === "key" || /^qr/.test(String(field || ""))) return "";
+  if (typeof v === "string") return secretFound_(v);
+  if (v && typeof v === "object") {
+    for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) { var f = payloadSecret_(v[k], Array.isArray(v) ? "" : k); if (f) return f; }
+  }
+  return "";
+}
+
+/** The text with every key replaced by "[🔒 <Art> entfernt]" – for mails to Bijou herself (form answers, reports). */
+function maskSecrets_(text) {
+  var s = String(text == null ? "" : text);
+  SECRET_RES_.forEach(function (r) { s = s.replace(r[1], function (all, pre) { return pre + "[🔒 " + r[0] + " entfernt]"; }); });
+  return s.replace(SECRET_ASSIGN_, function (all, name, sep, value) { return secretLooksReal_(value) ? name + sep + "[🔒 " + SECRET_ASSIGN_LABEL_ + " entfernt]" : all; });
+}
+// <<< secret-check
+/** Shown instead of sending when a text holds a key (same wording as in the app). */
+function secretBlocked(kind) { return "🔒 Gesperrt: Im Text steht ein geheimer Schlüssel (" + kind + "). Entferne ihn – Schlüssel verlassen nie deinen Computer."; }
+var ERRORS = { secret: secretBlocked("API-Schlüssel"), forbidden: "Der Handy-Schlüssel gilt nicht mehr.", done: "Das wurde schon erledigt.", unknown: "Den Eintrag gibt es nicht mehr.", unknown_tester: "Die Person gibt es nicht mehr in der Tabelle.", no_reason: "Ohne Grund wird nicht freigegeben – erst nachfragen." };
 function errorText(code) { return ERRORS[code] || ("Fehler: " + code); }
 
 function load() {
@@ -83,10 +186,14 @@ function load() {
     .then(function (r) {
       if (!r.ok) return askKey(r.error === "forbidden" ? "Dieser Handy-Schlüssel gilt nicht (mehr). Mach in deiner App einen neuen und scanne den QR-Code." : errorText(r.error));
       data = r; render();
+      if (!tafelStarted) { tafelStarted = true; tafelLoad(); }
     })
     .catch(function () { document.getElementById("all").replaceChildren(el("p", { class: "hint", text: "Keine Verbindung – Internet prüfen." }), el("button", { text: "↻ Nochmal", on: load })); });
 }
 function post(payload, msg, buttons) {
+  // Checked here in the browser before anything is sent (the Google script checks again).
+  var leak = payloadSecret_(payload);
+  if (leak) { msg.textContent = secretBlocked(leak); msg.setAttribute("role", "alert"); return; }
   buttons.forEach(function (b) { b.disabled = true; });
   msg.textContent = "Moment …";
   payload.key = getKey();
@@ -230,10 +337,356 @@ function render() {
 
   if (data.marketingOpen) all.appendChild(el("p", { class: "muted", text: "📣 " + data.marketingOpen + " Marketing-Beiträge warten – die gibst du am Computer im Reiter Marketing-Agent frei." }));
 
+  // Aufgaben & Termine: the same node every time, so the board keeps its state and focus while the rest reloads.
+  all.appendChild(tafelBox);
+
   var forget = el("button", { text: "Schlüssel auf diesem Handy löschen" });
   forget.onclick = function () { setKey(""); askKey(""); };
-  all.appendChild(el("div", { class: "row" }, [el("button", { text: "↻ Neu laden", on: load }), forget]));
+  all.appendChild(el("div", { class: "row" }, [el("button", { text: "↻ Neu laden", on: function () { load(); tafelLoad(); } }), forget]));
 }
+
+// ---------------------------------------------------------------- Aufgaben & Termine (Aufgaben-Tafel)
+// Bijou's own task board, the same cards as in her app (tab Projekt) and the dashboard – stored in her Google
+// sheet "Tester-Verwaltung", sheet "Aufgaben". No tester data. Same rules as src/lib/tafel.ts:
+// moving puts a card at the end of the column, cards are never deleted, the newer change wins.
+// No connection: the change is kept on this phone (localStorage) and sent at the next load – nothing is lost.
+var TAFEL_PENDING = "jt-tafel-pending";
+var TAFEL_CACHE = "jt-tafel-cache";
+var COLS = [
+  { id: "offen", name: "Offen" },
+  { id: "arbeit", name: "In Arbeit" },
+  { id: "wartet", name: "Wartet auf dich" },
+  { id: "fertig", name: "Fertig" },
+];
+var TAGS = ["App", "Tester", "Firma", "Marketing"];
+var WHO = ["Bijou", "Claude", "Tester-Agent", "Marketing-Agent", "Skill-Abgleich", "Optimus Prime"];
+var MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+var DAYS = [["Mo", "Montag"], ["Di", "Dienstag"], ["Mi", "Mittwoch"], ["Do", "Donnerstag"], ["Fr", "Freitag"], ["Sa", "Samstag"], ["So", "Sonntag"]];
+var tafelStarted = false;
+var tafel = readStore(TAFEL_CACHE, { items: [], syncedAt: "" });
+var pending = readStore(TAFEL_PENDING, []);
+var activeCol = 0;
+var termView = "list";
+var shownMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+function readStore(k, fallback) { try { return JSON.parse(localStorage.getItem(k) || "null") || fallback; } catch (e) { return fallback; } }
+function writeStore(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function $(s) { return tafelBox.querySelector(s); }
+function srOnly(text) { return el("span", { class: "sr-only", text: text }); }
+function say(msg) { var live = $("#tafel-live"); live.textContent = ""; setTimeout(function () { live.textContent = msg; }, 40); }
+function parseD(iso) { var p = iso.split("T"), d = p[0].split("-").map(Number), t = (p[1] || "00:00").split(":").map(Number); return new Date(d[0], d[1] - 1, d[2], t[0], t[1]); }
+function dayOnly(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function shortD(iso) { return parseD(iso).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" }); }
+function timeD(iso) { var d = parseD(iso); return iso.indexOf("T") > 0 ? d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0") + " Uhr" : ""; }
+function longD(iso) { var s = parseD(iso).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" }); return timeD(iso) ? s + " · " + timeD(iso) : s; }
+function rel(iso) {
+  var n = Math.round((dayOnly(parseD(iso)) - dayOnly(new Date())) / 864e5);
+  return n === 0 ? "heute" : n === 1 ? "morgen" : n < 0 ? "vorbei" : "in " + n + " Tagen";
+}
+function count(n) { return n === 1 ? "1 Aufgabe" : n + " Aufgaben"; }
+function colIndex(name) { for (var i = 0; i < COLS.length; i++) if (COLS[i].name === name) return i; return 0; }
+
+// The sheet's cards plus the changes not sent yet (as in applyPending, src/lib/tafel.ts).
+function shownItems() {
+  var items = tafel.items.map(function (t) { return Object.assign({}, t); });
+  pending.forEach(function (op) {
+    var t = items.filter(function (x) { return x.id === op.id; })[0];
+    if (op.op === "add" && !t) items.push(Object.assign({ id: op.id, art: "Aufgabe", reihenfolge: nextOrder(items, op.item.spalte), geaendertAm: op.at }, op.item));
+    else if (op.op === "move" && t && !(t.geaendertAm > op.at)) { if (t.spalte !== op.spalte) t.reihenfolge = nextOrder(items, op.spalte); t.spalte = op.spalte; t.geaendertAm = op.at; }
+  });
+  return items;
+}
+function nextOrder(items, col) { return items.reduce(function (m, t) { return t.art === "Aufgabe" && !t.ausgeblendet && t.spalte === col ? Math.max(m, Number(t.reihenfolge) || 0) : m; }, 0) + 1; }
+function inCol(items, ci) {
+  return items.filter(function (t) { return t.art === "Aufgabe" && !t.ausgeblendet && t.spalte === COLS[ci].name; })
+    .sort(function (a, b) { return (a.reihenfolge - b.reihenfolge) || String(a.geaendertAm).localeCompare(String(b.geaendertAm)) || a.titel.localeCompare(b.titel, "de"); });
+}
+function newId() { return "t" + Date.now().toString(36) + Math.floor(Math.random() * 1679616).toString(36).padStart(4, "0"); }
+
+var tafelBox = el("div", {}, [
+  el("section", { "aria-labelledby": "h-tafel" }, [
+    el("h2", { id: "h-tafel", text: "📋 Aufgaben" }),
+    el("p", { class: "sync muted" }, [el("span", { "aria-hidden": "true", text: "🔄" }), el("span", { id: "tafel-sync" })]),
+    el("p", { class: "muted", text: "🔒 Liegt in deiner Google-Tabelle (Blatt „Aufgaben“) – nur deine Aufgaben, keine Daten von Testpersonen." }),
+    el("div", { id: "tafel-msg" }),
+    el("div", { id: "tafel-tabs", class: "tabs-bar", role: "tablist", "aria-label": "Spalten der Aufgaben-Tafel" }),
+    el("div", { id: "tafel" }),
+    el("button", { id: "neu-btn", class: "add ok", type: "button", "aria-expanded": "false", "aria-controls": "neu-box", text: "+ Neue Aufgabe" }),
+    el("div", { id: "neu-box", hidden: "hidden" }),
+    el("p", { id: "tafel-live", class: "sr-only", "aria-live": "polite" }),
+  ]),
+  el("section", { "aria-labelledby": "h-termine" }, [
+    el("h2", { id: "h-termine", text: "📅 Termine" }),
+    el("div", { class: "view-row", role: "group", "aria-label": "Ansicht der Termine" }, [
+      el("button", { type: "button", "data-view": "list", text: "Liste" }),
+      el("button", { type: "button", "data-view": "month", text: "Monat" }),
+    ]),
+    el("div", { id: "termine-inhalt" }),
+  ]),
+]);
+
+/** Sends the kept changes (none = just read) and shows the sheet's answer. */
+function tafelLoad() {
+  var sending = pending.slice();
+  var msg = $("#tafel-msg");
+  var leak = payloadSecret_(sending);
+  if (leak) { msg.replaceChildren(el("p", { class: "hint", role: "alert", text: secretBlocked(leak) + " Die Änderung bleibt auf dem Handy gemerkt, bis du ihn entfernt hast." })); return; }
+  if (!tafel.syncedAt) $("#tafel-sync").textContent = "Synchron mit App, Handy und Dashboard – lädt …";
+  fetch(SCRIPT, { method: "POST", credentials: "omit", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ action: "phoneTafel", key: getKey(), ops: sending }) })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) {
+        msg.replaceChildren(el("p", { class: "hint", role: "alert", text: r.error === "bad_request" ? "Das Google-Skript kennt die Tafel noch nicht – am Computer das Skript neu bereitstellen. Deine Änderungen bleiben auf dem Handy gemerkt." : errorText(r.error) }));
+        return;
+      }
+      var sent = {};
+      sending.forEach(function (o) { sent[o.op + "|" + o.id + "|" + o.at] = true; });
+      pending = pending.filter(function (o) { return !sent[o.op + "|" + o.id + "|" + o.at]; });
+      writeStore(TAFEL_PENDING, pending);
+      tafel = { items: r.items || [], syncedAt: new Date().toISOString() };
+      writeStore(TAFEL_CACHE, tafel);
+      msg.replaceChildren();
+      var newer = (r.skipped || []).filter(function (s) { return s.reason === "newer"; }).length;
+      if (newer) say(newer === 1 ? "Eine Karte wurde inzwischen woanders geändert – die neuere Fassung bleibt." : newer + " Karten wurden inzwischen woanders geändert – die neueren Fassungen bleiben.");
+      tafelRender();
+    })
+    .catch(function () {
+      msg.replaceChildren(el("p", { class: "hint", role: "alert", text: "Keine Verbindung – deine Änderung ist auf diesem Handy gemerkt und geht beim nächsten Laden raus." }),
+        el("button", { type: "button", text: "↻ Erneut senden", on: tafelLoad }));
+    });
+}
+
+// Where the focus is inside the board – so it comes back to the same place after the sheet's answer redraws it.
+function focusSpot() {
+  var a = document.activeElement;
+  if (!a || !tafelBox.contains(a)) return null;
+  var card = a.closest("[data-id]");
+  return { id: a.id, card: card ? card.getAttribute("data-id") : "", act: a.getAttribute("data-act") || "" };
+}
+function restoreFocus(spot) {
+  if (!spot || tafelBox.contains(document.activeElement)) return;
+  var target = (spot.id && document.getElementById(spot.id)) ||
+    (spot.card && spot.act && tafelBox.querySelector('[data-id="' + spot.card + '"] [data-act="' + spot.act + '"]')) ||
+    (spot.card && $("#t-" + spot.card));
+  if (target) target.focus();
+}
+
+function tafelRender() {
+  var spot = focusSpot();
+  var d = tafel.syncedAt ? new Date(tafel.syncedAt) : null;
+  $("#tafel-sync").replaceChildren("Synchron mit App, Handy und Dashboard – zuletzt abgeglichen: ",
+    d ? el("time", { datetime: tafel.syncedAt, text: d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) + ", " + d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0") }) : "noch nie");
+  if (pending.length) $("#tafel-sync").append(" · " + (pending.length === 1 ? "1 Änderung" : pending.length + " Änderungen") + " noch nicht gesendet");
+  var items = shownItems();
+  renderTabs(items);
+  var board = $("#tafel");
+  board.replaceChildren();
+  COLS.forEach(function (c, ci) {
+    var list = inCol(items, ci);
+    var sec = el("section", { id: "panel-" + c.id, role: "tabpanel", "aria-labelledby": "tab-" + c.id, "data-col": c.id });
+    sec.hidden = ci !== activeCol;
+    sec.append(el("h3", { id: "col-h-" + c.id, class: "col-head", tabindex: "-1" }, [
+      el("span", { text: c.name }), srOnly(", " + count(list.length)), el("span", { class: "n", "aria-hidden": "true", text: String(list.length) }),
+    ]));
+    if (!list.length) sec.append(el("p", { class: "muted", text: "Keine Aufgaben." }));
+    else {
+      var ul = el("ul", { class: "col-list", "aria-label": c.name + ", " + count(list.length) });
+      list.forEach(function (t) { ul.append(tafelCard(t)); });
+      sec.append(ul);
+    }
+    board.append(sec);
+  });
+  renderTermine(items);
+  restoreFocus(spot);
+}
+
+function tafelButton(label, aria, act, fn, extra) {
+  return el("button", { type: "button", class: extra || null, "aria-label": aria, "data-act": act, text: label, on: fn });
+}
+function tafelCard(t) {
+  var ci = colIndex(t.spalte);
+  var li = el("li", { class: "card", "data-id": t.id, "aria-labelledby": "t-" + t.id });
+  li.append(el("h4", { id: "t-" + t.id, tabindex: "-1", text: t.titel }));
+  if (t.zeile) li.append(el("p", { class: "line muted", text: t.zeile }));
+  li.append(el("p", { class: "head" }, [
+    t.stichwort ? el("span", { class: "pill tag-" + t.stichwort }, [srOnly("Stichwort: "), t.stichwort]) : null,
+    t.datum ? el("span", {}, [el("span", { "aria-hidden": "true", text: "📅 " }), "bis ", el("time", { datetime: t.datum, text: shortD(t.datum) })]) : null,
+    t.wer ? el("span", {}, [el("span", { "aria-hidden": "true", text: "👤 " }), "Dran: " + t.wer]) : null,
+  ]));
+  var ctr = el("div", { class: "row", role: "group", "aria-label": "Verschieben: " + t.titel });
+  if (ci > 0) ctr.append(tafelButton("← zurück", t.titel + " nach „" + COLS[ci - 1].name + "“ verschieben", "back", function () { move(t, ci - 1, "back"); }));
+  if (ci < COLS.length - 1) ctr.append(tafelButton("→ weiter", t.titel + " nach „" + COLS[ci + 1].name + "“ verschieben", "next", function () { move(t, ci + 1, "next"); }, "ok"));
+  var sel = el("select", { "aria-label": "Spalte für " + t.titel + " wählen", "data-act": "sel" });
+  COLS.forEach(function (c, i) { sel.append(new Option(c.name, String(i), false, i === ci)); });
+  ctr.append(sel);
+  ctr.append(tafelButton("Verschieben", t.titel + " in die gewählte Spalte verschieben", "go", function () {
+    var to = Number(sel.value);
+    if (to === ci) { say("„" + t.titel + "“ ist schon in „" + COLS[ci].name + "“."); return; }
+    move(t, to, "go");
+  }));
+  li.append(ctr);
+  return li;
+}
+function renderTabs(items) {
+  var bar = $("#tafel-tabs");
+  bar.replaceChildren();
+  COLS.forEach(function (c, ci) {
+    var n = inCol(items, ci).length;
+    var b = el("button", {
+      type: "button", role: "tab", id: "tab-" + c.id, "aria-selected": String(ci === activeCol),
+      "aria-controls": "panel-" + c.id, tabindex: ci === activeCol ? "0" : "-1", "aria-label": c.name + ", " + count(n),
+    }, [c.name + " ", el("span", { class: "n", "aria-hidden": "true", text: String(n) })]);
+    b.onclick = function () { activeCol = ci; tafelRender(); $("#tab-" + c.id).focus(); };
+    b.onkeydown = function (e) {
+      var k = e.key, to = null;
+      if (k === "ArrowRight") to = (ci + 1) % COLS.length;
+      if (k === "ArrowLeft") to = (ci + COLS.length - 1) % COLS.length;
+      if (k === "Home") to = 0;
+      if (k === "End") to = COLS.length - 1;
+      if (to === null) return;
+      e.preventDefault();
+      activeCol = to; tafelRender(); $("#tab-" + COLS[to].id).focus();
+    };
+    bar.append(b);
+  });
+}
+function move(t, to, act) {
+  var from = colIndex(t.spalte);
+  var before = inCol(shownItems(), from);
+  var oldIndex = before.map(function (x) { return x.id; }).indexOf(t.id);
+  pending.push({ op: "move", id: t.id, at: new Date().toISOString(), spalte: COLS[to].name });
+  writeStore(TAFEL_PENDING, pending);
+  tafelRender();
+  say("„" + t.titel + "“ ist jetzt in „" + COLS[to].name + "“.");
+  if (to !== activeCol) {
+    // The card is now in another tab: focus the next card here, else the tab itself.
+    var rest = inCol(shownItems(), from);
+    var next = rest[Math.min(oldIndex, rest.length - 1)];
+    (next ? $("#t-" + next.id) : $("#tab-" + COLS[from].id)).focus();
+  } else {
+    var same = tafelBox.querySelector('[data-id="' + t.id + '"] [data-act="' + act + '"]');
+    (same || $("#t-" + t.id)).focus();
+  }
+  tafelLoad();
+}
+
+// ---------- Neue Aufgabe ----------
+function field(label, control) { return el("label", {}, [el("span", { text: label }), control]); }
+(function setupNew() {
+  var toggle = $("#neu-btn");
+  var box = $("#neu-box");
+  var title = el("input", { type: "text", id: "neu-titel", required: "required", autocomplete: "off" });
+  var line = el("input", { type: "text", id: "neu-zeile", autocomplete: "off" });
+  var tag = el("select", { id: "neu-tag" });
+  TAGS.forEach(function (x) { tag.append(new Option(x)); });
+  var date = el("input", { type: "date", id: "neu-datum" });
+  var who = el("select", { id: "neu-wer" });
+  WHO.forEach(function (x) { who.append(new Option(x)); });
+  var col = el("select", { id: "neu-spalte" });
+  COLS.forEach(function (c, i) { col.append(new Option(c.name, String(i))); });
+  var err = el("p", { class: "hint", role: "alert" });
+  var form = el("form", { class: "card", "aria-label": "Neue Aufgabe", novalidate: "novalidate" }, [
+    field("Titel", title), field("Kurze Zeile (freiwillig)", line), field("Stichwort", tag),
+    field("Datum (freiwillig)", date), field("Wer ist dran?", who), field("Spalte", col),
+    err,
+    el("div", { class: "row" }, [
+      el("button", { type: "submit", class: "ok", text: "Hinzufügen" }),
+      el("button", { type: "button", text: "Abbrechen", on: function () { close(); toggle.focus(); } }),
+    ]),
+    el("p", { class: "msg", text: "Die Karte erscheint sofort und geht dann in deine Google-Tabelle." }),
+  ]);
+  box.append(form);
+  function close() { box.hidden = true; toggle.setAttribute("aria-expanded", "false"); err.textContent = ""; form.reset(); }
+  toggle.onclick = function () {
+    var open = box.hidden;
+    box.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+    if (open) title.focus();
+  };
+  form.onsubmit = function (e) {
+    e.preventDefault();
+    if (!title.value.trim()) { err.textContent = "Bitte einen Titel eingeben."; title.focus(); return; }
+    var ci = Number(col.value);
+    var id = newId();
+    pending.push({ op: "add", id: id, at: new Date().toISOString(), item: { titel: title.value.trim().slice(0, 120), zeile: line.value.trim().slice(0, 300), stichwort: tag.value, spalte: COLS[ci].name, datum: date.value || "", wer: who.value } });
+    writeStore(TAFEL_PENDING, pending);
+    var name = title.value.trim();
+    activeCol = ci;
+    close();
+    tafelRender();
+    say("Neue Aufgabe „" + name + "“ in „" + COLS[ci].name + "“ angelegt.");
+    $("#t-" + id).focus();
+    tafelLoad();
+  };
+})();
+
+// ---------- Termine ----------
+function renderTermine(items) {
+  var events = items.filter(function (t) { return t.art === "Termin" && !t.ausgeblendet && t.datum; })
+    .sort(function (a, b) { return a.datum.localeCompare(b.datum); });
+  tafelBox.querySelectorAll("[data-view]").forEach(function (b) {
+    b.setAttribute("aria-pressed", String(b.getAttribute("data-view") === termView));
+    b.onclick = function () { termView = b.getAttribute("data-view"); renderTermine(shownItems()); b.focus(); };
+  });
+  var box = $("#termine-inhalt");
+  box.replaceChildren();
+  if (termView === "list") {
+    if (!events.length) { box.append(el("p", { class: "muted", text: "Keine Termine." })); return; }
+    var ol = el("ol", { class: "term-list" });
+    events.forEach(function (e) {
+      ol.append(el("li", { class: "card" }, [
+        el("time", { datetime: e.datum, text: longD(e.datum) }),
+        el("span", { text: e.titel }),
+        el("span", { class: "when", text: rel(e.datum) + (e.wer ? " · " + e.wer : "") }),
+      ]));
+    });
+    box.append(ol);
+    return;
+  }
+  var y = shownMonth.getFullYear(), m = shownMonth.getMonth();
+  var label = MONTHS[m] + " " + y;
+  var prev = new Date(y, m - 1, 1), next = new Date(y, m + 1, 1);
+  var later = events.map(function (e) { return parseD(e.datum); }).filter(function (d) { return d >= next; })[0];
+  var go = function (to, i) { shownMonth = to; renderTermine(shownItems()); var list = box.querySelectorAll(".month-nav button"); (list[i] || list[0]).focus(); };
+  box.append(el("div", { class: "month-nav" }, [
+    el("button", { type: "button", "aria-label": "Vormonat: " + MONTHS[prev.getMonth()] + " " + prev.getFullYear(), text: "←", on: function () { go(prev, 0); } }),
+    el("strong", { "aria-live": "polite", text: label }),
+    el("button", { type: "button", "aria-label": "Nächster Monat: " + MONTHS[next.getMonth()] + " " + next.getFullYear(), text: "→", on: function () { go(next, 1); } }),
+    later ? el("button", { type: "button", text: "Nächster Termin →", "aria-label": "Zum nächsten Termin springen: " + MONTHS[later.getMonth()] + " " + later.getFullYear(), on: function () { go(new Date(later.getFullYear(), later.getMonth(), 1), 2); } }) : null,
+  ]));
+  var table = el("table", { class: "month" }, [el("caption", { class: "sr-only", text: "Termine im " + label })]);
+  var head = el("tr");
+  DAYS.forEach(function (d) { head.append(el("th", { scope: "col", abbr: d[1], text: d[0] })); });
+  table.append(el("thead", {}, [head]));
+  var body = el("tbody");
+  var first = (new Date(y, m, 1).getDay() + 6) % 7;
+  var total = new Date(y, m + 1, 0).getDate();
+  var today = dayOnly(new Date()).getTime();
+  var row = el("tr");
+  var inMonth = [];
+  for (var i = 0; i < first; i++) row.append(el("td", { class: "empty" }));
+  for (var d = 1; d <= total; d++) {
+    var date = new Date(y, m, d).getTime();
+    var evs = events.filter(function (e) { return dayOnly(parseD(e.datum)).getTime() === date; });
+    var isToday = date === today;
+    var td = el("td", { class: [evs.length ? "has" : "", isToday ? "today" : ""].join(" ").trim() || null, "aria-current": isToday ? "date" : null }, [el("span", { class: "num", text: String(d) })]);
+    if (isToday) td.append(srOnly(" (heute)"));
+    evs.forEach(function (e) { td.append(el("span", { class: "ev", text: (timeD(e.datum) ? timeD(e.datum) + " " : "") + e.titel })); });
+    if (evs.length) inMonth.push(d + ". – " + evs.map(function (e) { return (timeD(e.datum) ? timeD(e.datum) + " " : "") + e.titel; }).join(", "));
+    row.append(td);
+    if ((first + d) % 7 === 0) { body.append(row); row = el("tr"); }
+  }
+  if (row.children.length) { while (row.children.length < 7) row.append(el("td", { class: "empty" })); body.append(row); }
+  table.append(body);
+  box.append(table);
+  // On the phone the dots are too small for text: the dates of this month as a list below.
+  var ul = el("ul", { class: "month-list" });
+  if (!inMonth.length) ul.append(el("li", { text: "Keine Termine in diesem Monat." }));
+  inMonth.forEach(function (t) { ul.append(el("li", { text: t })); });
+  box.append(ul);
+}
+
+if (tafel.syncedAt || pending.length) tafelRender();
 load();
 </script>
 </body>
