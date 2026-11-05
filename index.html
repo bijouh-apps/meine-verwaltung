@@ -3,7 +3,8 @@
   Handy-Seite "Meine Verwaltung" – only for Bijou. Published on GitHub Pages; the page holds NO data.
   It asks her Google script (Tester-Verwaltung) with the PHONE KEY, which can do only four things:
   answer the agents' questions, send/discard drafts, approve new testers, mark tester mails as done –
-  plus her own task board "Aufgaben & Termine" (sheet "Aufgaben": add, move, never delete; no tester data).
+  plus her own task board "Aufgaben & Termine" (sheet "Aufgaben": add, move, never delete; no tester data)
+  and "💬 Nachricht in die App" to an approved tester (sheet "App-Nachrichten", shown at the next start of the test version).
   The key comes once via the QR code in her app (#k=…), stays in this browser only, and a new key
   (tab Agent → 📱) makes the old one useless at once.
 -->
@@ -80,6 +81,15 @@ select{width:100%;box-sizing:border-box;font:inherit;font-size:15px;border:1px s
 .view-row{display:flex;gap:6px;margin:6px 0}
 .view-row button{padding:6px 12px;font-size:14px;border-radius:999px}
 .view-row button[aria-pressed="true"]{background:var(--brand);color:#fff;border-color:var(--brand)}
+/* "💬 Nachricht in die App": the box as the tester app shows it (🎨 coloured head / 🤍 white with a line) */
+.am-box{border:1px solid #dde3e6;border-radius:12px;overflow:hidden;background:#fff;color:#1c2429;margin-top:8px}
+.am-head{padding:8px 12px;font-size:13px;font-weight:700;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.am-farben .am-head{background:#0f6674;color:#fff}
+.am-serioes .am-head{border-bottom:2px solid #0f6674}
+.am-part{padding:8px 12px}.am-part+.am-part{border-top:1px solid #dde3e6}
+.am-part h4{margin:2px 0 4px;font-size:15px}.am-part p{white-space:pre-wrap;margin:0;font-size:14px}
+.am-btns{display:flex;gap:6px;padding:4px 12px 12px}.am-btns span{font-size:13px;border:1px solid #dde3e6;border-radius:8px;padding:4px 8px}
+.am-btns span:first-child{background:#0f6674;color:#fff;border-color:#0f6674}
 </style>
 </head>
 <body>
@@ -227,6 +237,73 @@ function dateDe(s) { var d = new Date(s); return isNaN(d.getTime()) ? (s || "") 
 function address(from) { var m = String(from).match(/<([^>]+)>/); return (m ? m[1] : String(from)).trim().toLowerCase(); }
 var ART = { willkommen: "Willkommens-Mail", start_erinnerung: "Erinnerung: noch nicht gestartet", antwort: "Antwort", erinnerung: "Erinnerung", hinweis: "Hinweis" };
 
+function chips(label, options, value, onPick) {
+  var box = el("div", { class: "view-row", role: "group", "aria-label": label });
+  options.forEach(function (o) {
+    var b = el("button", { type: "button", text: o[1], "aria-pressed": String(o[0] === value) });
+    b.onclick = function () { box.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", "false"); }); b.setAttribute("aria-pressed", "true"); onPick(o[0]); };
+    box.appendChild(b);
+  });
+  return box;
+}
+
+function appMessageSection(testers) {
+  var sec = section("💬 Nachricht in die App", testers.length, "");
+  sec.appendChild(el("p", { class: "muted", text: "Die Person sieht sie beim nächsten Start der Tester-App im Reiter Start. Antworten kommen als normale E-Mail. Ob sie gelesen wurde, erfährst du nicht." }));
+  var st = { lang: "both", look: "farben" };
+  var who = el("select", { "aria-label": "An wen?" });
+  testers.forEach(function (t, i) { var o = el("option", { value: String(i), text: t.name + " (" + t.email + ")" }); who.appendChild(o); });
+  var f = {};
+  ["de", "en"].forEach(function (l) {
+    f[l] = { subject: el("input", { "aria-label": "Betreff " + l.toUpperCase() }), text: el("textarea", { rows: 5, "aria-label": "Text " + l.toUpperCase() }) };
+    f[l].box = el("div", {}, [el("label", { text: (l === "de" ? "DE · Betreff" : "EN · Subject") }), f[l].subject, el("label", { text: (l === "de" ? "DE · Text" : "EN · Text") }), f[l].text]);
+  });
+  var mail = el("input", { type: "checkbox", id: "am-mail", style: "width:auto" });
+  var preview = el("div", { "aria-live": "polite" });
+  var msg = el("p", { class: "msg" });
+  var send = el("button", { class: "ok", text: "💬 In die App senden" });
+  var used = function () { return st.lang === "de" ? ["de"] : st.lang === "en" ? ["en"] : ["de", "en"]; };
+  var draw = function () {
+    f.de.box.hidden = st.lang === "en"; f.en.box.hidden = st.lang === "de";
+    send.textContent = mail.checked ? "💬 In die App + ✉ als E-Mail senden" : "💬 In die App senden";
+    var t = testers[Number(who.value)] || testers[0];
+    var en = t.lang === "en";
+    var parts = used().map(function (l) { return { l: l, s: f[l].subject.value.trim(), x: f[l].text.value.trim() }; });
+    var missing = parts.filter(function (p) { return !p.s || !p.x; })[0];
+    if (missing) { preview.replaceChildren(el("p", { class: "muted", text: "Vorschau erscheint, sobald " + (missing.l === "de" ? "Deutsch" : "Englisch") + " (Betreff und Text) ausgefüllt ist." })); return; }
+    var box = el("div", { class: "am-box am-" + st.look, lang: t.lang }, [
+      el("div", { class: "am-head" }, [el("span", { text: "💬 " + (en ? "New message from Job Application Tracker" : "Neue Nachricht vom Job Application Tracker") })]),
+    ]);
+    parts.forEach(function (p) { box.appendChild(el("div", { class: "am-part", lang: p.l }, [parts.length > 1 ? el("span", { class: "pill", text: p.l.toUpperCase() }) : null, el("h4", { text: p.s }), el("p", { text: p.x })])); });
+    box.appendChild(el("div", { class: "am-btns", "aria-hidden": "true" }, [el("span", { text: "↩ " + (en ? "Reply" : "Antworten") }), el("span", { text: "✓ " + (en ? "Read" : "Gelesen") })]));
+    preview.replaceChildren(el("p", { class: "muted", text: "So sieht es in der App aus (Sprache der App laut Anmeldung: " + (en ? "Englisch" : "Deutsch") + "):" }), box);
+  };
+  [who, mail, f.de.subject, f.de.text, f.en.subject, f.en.text].forEach(function (x) { x.oninput = draw; x.onchange = draw; });
+  send.onclick = function () {
+    var t = testers[Number(who.value)];
+    var parts = used().map(function (l) { return { l: l, s: f[l].subject.value.trim(), x: f[l].text.value.trim() }; });
+    if (!t || parts.some(function (p) { return !p.s || !p.x; })) { msg.textContent = "Bitte Betreff und Text ausfüllen."; return; }
+    var payload = { action: "phoneAppMessage", email: t.email, lang: st.lang, look: st.look,
+      subjectDe: f.de.subject.value, textDe: f.de.text.value, subjectEn: f.en.subject.value, textEn: f.en.text.value };
+    if (mail.checked) {
+      payload.alsoMail = "1";
+      payload.subject = parts.map(function (p) { return p.s; }).join(" / ");
+      payload.body = parts.length > 1 ? parts.map(function (p) { return p.l.toUpperCase() + " · " + p.x; }).join("\n\n──────────\n\n") : parts[0].x;
+    }
+    post(payload, msg, [send]);
+  };
+  sec.appendChild(el("div", { class: "card" }, [
+    el("label", { text: "An wen?" }), who,
+    el("label", { text: "Sprache" }), chips("Sprache", [["both", "DE + EN"], ["de", "nur DE"], ["en", "nur EN"]], st.lang, function (v) { st.lang = v; draw(); }),
+    el("label", { text: "Aussehen" }), chips("Aussehen", [["farben", "🎨 In meinen Farben"], ["serioes", "🤍 Seriös"]], st.look, function (v) { st.look = v; draw(); }),
+    f.de.box, f.en.box,
+    el("div", { class: "row" }, [mail, el("label", { for: "am-mail", text: "Auch als E-Mail schicken (einfacher Text, ohne Design)", style: "margin:0;flex:1" })]),
+    preview, el("div", { class: "row" }, [send]), msg,
+  ]));
+  draw();
+  return sec;
+}
+
 function render() {
   var all = document.getElementById("all");
   all.replaceChildren();
@@ -313,6 +390,11 @@ function render() {
     ]));
   });
   all.appendChild(t);
+
+  // "💬 Nachricht in die App" (Bijou 03.11.2026): the tester sees it at the next start of the test version.
+  // From the phone the copy by e-mail goes as plain text (the designed copy is made in the app on the computer).
+  var appT = data.appTesters || [];
+  if (appT.length) all.appendChild(appMessageSection(appT));
 
   var i = section("📥 Unbeantwortete Tester-Mails", data.inbox.length, "Alles beantwortet.");
   if (data.inbox.length) i.appendChild(el("p", { class: "muted", text: "„✓ Erledigt“: Label „Agent/Erledigt“ in Gmail und ab ins Archiv – gelöscht wird nichts." }));
