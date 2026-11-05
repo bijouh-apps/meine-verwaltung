@@ -418,6 +418,10 @@ function render() {
   all.appendChild(i);
 
   if (data.marketingOpen) all.appendChild(el("p", { class: "muted", text: "📣 " + data.marketingOpen + " Marketing-Beiträge warten – die gibst du am Computer im Reiter Marketing-Agent frei." }));
+  // Reports are only mentioned here, not listed as drafts (Bijou 05.11.2026).
+  var rep = data.reportsOpen || {};
+  if (rep.foerder) all.appendChild(el("p", { class: "muted", text: "📄 " + (rep.foerder === 1 ? "Ein neuer Wochenbericht" : rep.foerder + " neue Wochenberichte") + " der Förder-Suche – lesen am Computer im Reiter Gründung." }));
+  if (rep.search) all.appendChild(el("p", { class: "muted", text: "📄 " + (rep.search === 1 ? "Ein neuer Bericht" : rep.search + " neue Berichte") + " der Testpersonen-Suche – lesen am Computer im Reiter Testpersonen-Suche." }));
 
   // Aufgaben & Termine: the same node every time, so the board keeps its state and focus while the rest reloads.
   all.appendChild(tafelBox);
