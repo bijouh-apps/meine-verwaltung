@@ -191,7 +191,8 @@ function errorText(code) { return ERRORS[code] || ("Fehler: " + code); }
 function load() {
   var key = getKey();
   if (!key) return askKey("");
-  fetch(SCRIPT + "?action=phoneData&key=" + encodeURIComponent(key), { credentials: "omit" })
+  // The key travels in the body, never in the address (Bijou 06.11.2026 – addresses end up in logs and browser history).
+  fetch(SCRIPT, { method: "POST", credentials: "omit", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ action: "phoneData", key: key }) })
     .then(function (r) { return r.json(); })
     .then(function (r) {
       if (!r.ok) return askKey(r.error === "forbidden" ? "Dieser Handy-Schlüssel gilt nicht (mehr). Mach in deiner App einen neuen und scanne den QR-Code." : errorText(r.error));
