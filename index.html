@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  Handy-Seite "Meine Verwaltung" – only for Bijou. Published on GitHub Pages; the page holds NO data.
+  Handy-Seite "Meine Verwaltung" – only for the owner. Published on GitHub Pages; the page holds NO data.
   It asks her Google script (Tester-Verwaltung) with the PHONE KEY, which can do only four things:
   answer the agents' questions, send/discard drafts, approve new testers, mark tester mails as done –
   plus her own task board "Aufgaben & Termine" (sheet "Aufgaben": add, move, never delete; no tester data)
@@ -100,7 +100,7 @@ select{width:100%;box-sizing:border-box;font:inherit;font-size:15px;border:1px s
 </main>
 <script>
 "use strict";
-// Bijou's Google script (Tester-Verwaltung), the same address her app uses.
+// The owner's Google script (Tester-Verwaltung), the same address her app uses.
 var SCRIPT = "https://script.google.com/macros/s/AKfycbzFP0WKdQh874ib1kiOstiRH4IcLw8UsSsxEMXndD1l40GIbu1Q2V3rEiMu3FntJ0ss/exec";
 var STORE = "jt-phone-key";
 var data = null;
@@ -126,7 +126,7 @@ function el(tag, attrs, kids) {
   (kids || []).forEach(function (c) { if (c) e.append(c); });
   return e;
 }
-// >>> secret-check (Bijou's rule 31.10.2026: API keys never leave the computer). Same patterns as src/lib/secrets.ts –
+// >>> secret-check (owner's rule 31.10.2026: API keys never leave the computer). Same patterns as src/lib/secrets.ts –
 // src/lib/secretMirrors.test.ts checks that this copy finds exactly the same. Only the KIND is returned, never the key.
 var SECRET_RES_ = [
   ["Anthropic-Schlüssel (Claude)", /(^|[^A-Za-z0-9_+\/-])sk-ant-[A-Za-z0-9_-]{20,}/g],
@@ -176,7 +176,7 @@ function payloadSecret_(v, field) {
   return "";
 }
 
-/** The text with every key replaced by "[🔒 <Art> entfernt]" – for mails to Bijou herself (form answers, reports). */
+/** The text with every key replaced by "[🔒 <Art> entfernt]" – for mails to the owner (form answers, reports). */
 function maskSecrets_(text) {
   var s = String(text == null ? "" : text);
   SECRET_RES_.forEach(function (r) { s = s.replace(r[1], function (all, pre) { return pre + "[🔒 " + r[0] + " entfernt]"; }); });
@@ -191,7 +191,7 @@ function errorText(code) { return ERRORS[code] || ("Fehler: " + code); }
 function load() {
   var key = getKey();
   if (!key) return askKey("");
-  // The key travels in the body, never in the address (Bijou 06.11.2026 – addresses end up in logs and browser history).
+  // The key travels in the body, never in the address (06.11.2026 – addresses end up in logs and browser history).
   fetch(SCRIPT, { method: "POST", credentials: "omit", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ action: "phoneData", key: key }) })
     .then(function (r) { return r.json(); })
     .then(function (r) {
@@ -214,7 +214,7 @@ function post(payload, msg, buttons) {
       if (!r.ok) { msg.textContent = errorText(r.error); buttons.forEach(function (b) { b.disabled = false; }); return; }
       load();
     })
-    // No answer does NOT mean nothing happened – Google may have done it already (Bijou 09.11.2026: a mail came 3 times).
+    // No answer does NOT mean nothing happened – Google may have done it already (09.11.2026: a mail came 3 times).
     .catch(function () { msg.textContent = "Keine Antwort von Google – vielleicht ist es trotzdem angekommen. Bitte erst unten auf „↻ Neu laden“ tippen und nachsehen, bevor du nochmal tippst."; buttons.forEach(function (b) { b.disabled = false; }); });
 }
 
@@ -343,7 +343,7 @@ function render() {
       var warn = el("p", { class: "hint", text: "" });
       var check = function () { warn.textContent = body.value.trim() !== String(s.text || "").trim() || subject.value.trim() !== String(s.subject || "").trim() ? "Du hast etwas geändert – dann geht die Mail als einfacher Text raus (ohne Design und QR-Codes)." : ""; };
       body.oninput = check; subject.oninput = check;
-      // Welcome mail (Bijou 09.11.2026): pick language and look before sending – the preview below changes with it.
+      // Welcome mail (09.11.2026): pick language and look before sending – the preview below changes with it.
       if (s.variants && s.variant) {
         var v = s.variant;
         var pickVariant = function (lang, look) { post({ action: "phoneWelcomeVariant", id: s.id, lang: lang, look: look }, msg, [sendBtn, drop]); };
@@ -402,7 +402,7 @@ function render() {
   });
   all.appendChild(t);
 
-  // "💬 Nachricht in die App" (Bijou 03.11.2026): the tester sees it at the next start of the test version.
+  // "💬 Nachricht in die App" (03.11.2026): the tester sees it at the next start of the test version.
   // From the phone the copy by e-mail goes as plain text (the designed copy is made in the app on the computer).
   var appT = data.appTesters || [];
   if (appT.length) all.appendChild(appMessageSection(appT));
@@ -429,7 +429,7 @@ function render() {
   all.appendChild(i);
 
   if (data.marketingOpen) all.appendChild(el("p", { class: "muted", text: "📣 " + data.marketingOpen + " Marketing-Beiträge warten – die gibst du am Computer im Reiter Marketing-Agent frei." }));
-  // Reports are only mentioned here, not listed as drafts (Bijou 05.11.2026).
+  // Reports are only mentioned here, not listed as drafts (05.11.2026).
   var rep = data.reportsOpen || {};
   if (rep.foerder) all.appendChild(el("p", { class: "muted", text: "📄 " + (rep.foerder === 1 ? "Ein neuer Wochenbericht" : rep.foerder + " neue Wochenberichte") + " der Förder-Suche – lesen am Computer im Reiter Gründung." }));
   if (rep.search) all.appendChild(el("p", { class: "muted", text: "📄 " + (rep.search === 1 ? "Ein neuer Bericht" : rep.search + " neue Berichte") + " der Testpersonen-Suche – lesen am Computer im Reiter Testpersonen-Suche." }));
@@ -443,7 +443,7 @@ function render() {
 }
 
 // ---------------------------------------------------------------- Aufgaben & Termine (Aufgaben-Tafel)
-// Bijou's own task board, the same cards as in her app (tab Projekt) and the dashboard – stored in her Google
+// The owner's own task board, the same cards as in her app (tab Projekt) and the dashboard – stored in her Google
 // sheet "Tester-Verwaltung", sheet "Aufgaben". No tester data. Same rules as src/lib/tafel.ts:
 // moving puts a card at the end of the column, cards are never deleted, the newer change wins.
 // No connection: the change is kept on this phone (localStorage) and sent at the next load – nothing is lost.
