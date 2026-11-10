@@ -185,7 +185,7 @@ function maskSecrets_(text) {
 // <<< secret-check
 /** Shown instead of sending when a text holds a key (same wording as in the app). */
 function secretBlocked(kind) { return "🔒 Gesperrt: Im Text steht ein geheimer Schlüssel (" + kind + "). Entferne ihn – Schlüssel verlassen nie deinen Computer."; }
-var ERRORS = { secret: secretBlocked("API-Schlüssel"), forbidden: "Der Handy-Schlüssel gilt nicht mehr.", done: "Das wurde schon erledigt.", unknown: "Den Eintrag gibt es nicht mehr.", unknown_tester: "Die Person gibt es nicht mehr in der Tabelle.", no_reason: "Ohne Grund wird nicht freigegeben – erst nachfragen." };
+var ERRORS = { secret: secretBlocked("API-Schlüssel"), forbidden: "Der Handy-Schlüssel gilt nicht mehr.", done: "Das wurde schon erledigt.", unknown: "Den Eintrag gibt es nicht mehr.", unknown_tester: "Die Person gibt es nicht mehr in der Tabelle.", no_reason: "Ohne Grund wird nicht freigegeben – erst nachfragen.", no_variant: "Diese Fassung fehlt noch – öffne in deiner App einmal den Reiter Agent, dann ist sie da.", bad_request: "Da fehlt etwas – bitte neu laden und nochmal versuchen." };
 function errorText(code) { return ERRORS[code] || ("Fehler: " + code); }
 
 function load() {
@@ -214,7 +214,8 @@ function post(payload, msg, buttons) {
       if (!r.ok) { msg.textContent = errorText(r.error); buttons.forEach(function (b) { b.disabled = false; }); return; }
       load();
     })
-    .catch(function () { msg.textContent = "Keine Verbindung – nichts wurde geändert. Bitte nochmal tippen."; buttons.forEach(function (b) { b.disabled = false; }); });
+    // No answer does NOT mean nothing happened – Google may have done it already (Bijou 09.11.2026: a mail came 3 times).
+    .catch(function () { msg.textContent = "Keine Antwort von Google – vielleicht ist es trotzdem angekommen. Bitte erst unten auf „↻ Neu laden“ tippen und nachsehen, bevor du nochmal tippst."; buttons.forEach(function (b) { b.disabled = false; }); });
 }
 
 function askKey(why) {
@@ -342,6 +343,15 @@ function render() {
       var warn = el("p", { class: "hint", text: "" });
       var check = function () { warn.textContent = body.value.trim() !== String(s.text || "").trim() || subject.value.trim() !== String(s.subject || "").trim() ? "Du hast etwas geändert – dann geht die Mail als einfacher Text raus (ohne Design und QR-Codes)." : ""; };
       body.oninput = check; subject.oninput = check;
+      // Welcome mail (Bijou 09.11.2026): pick language and look before sending – the preview below changes with it.
+      if (s.variants && s.variant) {
+        var v = s.variant;
+        var pickVariant = function (lang, look) { post({ action: "phoneWelcomeVariant", id: s.id, lang: lang, look: look }, msg, [sendBtn, drop]); };
+        head.push(el("label", { text: "Sprache der Mail" }),
+          chips("Sprache der Mail", [["both", "DE + EN"], ["de", "nur DE"], ["en", "nur EN"]], v.lang, function (x) { pickVariant(x, v.look); }),
+          el("label", { text: "Aussehen" }),
+          chips("Aussehen", [["farben", "🎨 In meinen Farben"], ["serioes", "🤍 Seriös"]], v.look, function (x) { pickVariant(v.lang, x); }));
+      }
       if (s.canSwap) {
         var swapBtn = el("button", { text: "⇅ Reihenfolge tauschen" });
         swapBtn.onclick = function () { post({ action: "phoneSwap", id: s.id }, msg, [swapBtn, sendBtn, drop]); };
@@ -385,7 +395,7 @@ function render() {
       el("div", { class: "head" }, [el("strong", { text: r.name || r.email }), el("span", { class: "muted", text: r.email + " · " + r.since })]),
       r.gmail ? el("p", { class: "hint", text: "Gmail " + r.gmail + ": später am Computer bei Google als Testnutzer eintragen (deine App erinnert dich)." }) : null,
       el("p", { class: data.welcomeReady ? "muted" : "hint", text: data.welcomeReady
-        ? "Danach liegt die Willkommens-Mail (mit Freischaltcode) oben unter „Vorschläge zum Senden“ – lesen und senden."
+        ? "Danach liegt die Willkommens-Mail (mit Freischaltcode) oben unter „Vorschläge zum Senden“ – dort Sprache und Aussehen wählen, Vorschau ansehen, dann senden."
         : "Die Willkommens-Mail kann hier erst vorbereitet werden, wenn deine App einmal den Reiter Agent geöffnet hat. Freigeben geht schon, die Mail schickst du dann am Computer." }),
       el("div", { class: "row" }, [ok]), msg,
     ]));
