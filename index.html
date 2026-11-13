@@ -33,6 +33,10 @@ button:disabled{opacity:.6}
 .pill{font-size:12px;border-radius:999px;padding:2px 8px;background:var(--bg);border:1px solid var(--line)}
 label{display:block;font-size:13px;color:var(--muted);margin-top:10px}
 textarea,input{width:100%;box-sizing:border-box;font:inherit;font-size:15px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);color:var(--ink)}
+.pick{border:1px solid var(--line);border-radius:8px;padding:6px 10px 10px;margin:10px 0 0}
+.pick legend{font-weight:600;font-size:14px;padding:0 4px}
+label.opt{display:flex;gap:8px;align-items:flex-start;color:var(--ink);font-size:15px;margin-top:8px}
+label.opt input{width:auto;margin-top:3px;flex:none}
 pre{white-space:pre-wrap;font:inherit;font-size:14px;margin:6px 0}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .ok{background:var(--ok);color:#fff;border-color:var(--ok)}
@@ -311,11 +315,40 @@ function render() {
   all.replaceChildren();
 
   var q = section("❓ Fragen der Agenten", data.questions.length, "Keine offenen Fragen.");
+  // Answer with a chosen possibility (or yes/no) and/or own words (12.11.2026) – same rules as src/lib/agentQuestion.ts.
   data.questions.forEach(function (s) {
-    var msg = el("p", { class: "msg" }), yes = el("button", { class: "ok", text: "✓ Ja" }), no = el("button", { text: "✕ Nein" });
-    yes.onclick = function () { post({ action: "phoneAnswer", id: s.id, status: "freigegeben" }, msg, [yes, no]); };
-    no.onclick = function () { post({ action: "phoneAnswer", id: s.id, status: "verworfen" }, msg, [yes, no]); };
-    q.appendChild(el("div", { class: "card" }, [el("strong", { text: s.subject }), el("pre", { text: s.text }), el("div", { class: "row" }, [yes, no]), msg]));
+    var msg = el("p", { class: "msg" }), options = s.options || [], kind = s.kind || "yesno";
+    var choices = kind === "yesno" ? [["ja", "✓ Ja, darf hinzufügen"], ["nein", "✕ Nein"]] : options.map(function (o, i) { return [i, (i + 1) + ". " + o]; });
+    var picked = null, radios = [];
+    var box = null;
+    if (kind !== "text") {
+      box = el("fieldset", { class: "pick" }, [el("legend", { text: kind === "yesno" ? "Darf der Agent das anlegen?" : "Möglichkeit wählen" })]);
+      choices.forEach(function (c) {
+        var r = el("input", { type: "radio", name: "frage-" + s.id });
+        r.onchange = function () { picked = c[0]; };
+        radios.push(r);
+        box.appendChild(el("label", { class: "opt" }, [r, el("span", { text: " " + c[1] })]));
+      });
+    }
+    var tid = "frage-text-" + s.id;
+    var own = el("textarea", { id: tid, rows: 3 });
+    var send = el("button", { class: "ok", text: "📤 Senden" }), drop = kind === "yesno" ? null : el("button", { text: "✕ Verwerfen" });
+    var buttons = [send].concat(drop ? [drop] : []);
+    send.onclick = function () {
+      var text = own.value.trim(), p = { action: "phoneAnswer", id: s.id };
+      if (picked === "ja") { p.status = "freigegeben"; p.choice = "Ja"; }
+      else if (picked === "nein") { p.status = text ? "beantwortet" : "verworfen"; p.choice = "Nein"; }
+      else if (typeof picked === "number") { p.status = "beantwortet"; p.choice = "Möglichkeit " + (picked + 1) + ": " + options[picked]; }
+      else if (text) { p.status = "beantwortet"; }
+      else { msg.textContent = kind === "text" ? "Bitte schreib eine Antwort." : "Bitte wähle eine Möglichkeit oder schreib eine Antwort."; msg.setAttribute("role", "alert"); return; }
+      if (text) p.text = text;
+      post(p, msg, buttons.concat(radios));
+    };
+    if (drop) drop.onclick = function () { post({ action: "phoneAnswer", id: s.id, status: "verworfen" }, msg, buttons.concat(radios)); };
+    q.appendChild(el("div", { class: "card" }, [
+      el("strong", { text: s.subject }), el("pre", { text: s.text }), box,
+      el("label", { for: tid, text: kind === "text" ? "Deine Antwort" : "Eigene Antwort (freiwillig)" }), own,
+      el("div", { class: "row" }, buttons), msg]));
   });
   all.appendChild(q);
 
